@@ -21,7 +21,7 @@ import re
 
 print("Tensorflow Version", tf.__version__)
 
-TRAINING = False
+TRAINING = True
 
 # TRAIN
 df = pd.read_csv('C:/Users/manfr/OneDrive/Desktop/training.1600000.processed.noemoticon.csv',
@@ -33,9 +33,17 @@ df = df.drop(['id', 'date', 'query', 'user_id'], axis=1)
 
 # TEST
 df_test = pd.read_csv('C:/Users/manfr/OneDrive/Desktop/files/tweets.csv',
-                      encoding='latin')
+                      encoding='latin') #header non c'è
 
-lab_to_sentiment = {0: "Negative", 4: "Positive"}
+#PROVE
+#df_test.head()
+#df_test.columns = ['sentiment', 'id', 'date', 'query', 'user_id', 'text']
+#df_test.head()
+#df_test = df_test.drop(['id', 'date', 'query', 'user_id'], axis=1)
+
+
+
+lab_to_sentiment = {0: "Negative", 4: "Positive", 8: "Neutral"}
 
 
 def label_decoder(label):
@@ -44,6 +52,11 @@ def label_decoder(label):
 
 df.sentiment = df.sentiment.apply(lambda x: label_decoder(x))
 df.head()
+
+
+#ALTRE PROVE
+#df_test.sentiment = df_test.sentiment.apply(lambda x: label_decoder(x))
+#df_test.head()
 
 val_count = df.sentiment.value_counts()
 
@@ -89,6 +102,7 @@ TRAIN_SIZE = 0.8
 MAX_NB_WORDS = 100000
 MAX_SEQUENCE_LENGTH = 30
 
+
 train_data, test_data = train_test_split(df, test_size=1 - TRAIN_SIZE,
                                          random_state=7)  # Splits Dataset into Training and Testing set
 print("Train Data size:", len(train_data))
@@ -98,7 +112,9 @@ print("Test Data size", len(test_data))
 if TRAINING == False:
     test_data = df_test
 
+
 train_data.head(10)
+
 
 from keras.preprocessing.text import Tokenizer
 
@@ -125,7 +141,7 @@ if TRAINING == True:
     encoder = LabelEncoder()
     encoder.fit(train_data.sentiment.to_list())
 
-    y_train = encoder.transform(train_data.sentiment.to_list())
+    y_train = encoder.transform(train_data.sentiment.to_list()) ##cambio
     y_test = encoder.transform(test_data.sentiment.to_list())
 
     y_train = y_train.reshape(-1, 1)
@@ -133,6 +149,16 @@ if TRAINING == True:
     print("y_train shape:", y_train.shape)
     print("y_test shape:", y_test.shape)
 
+#if TRAINING == False:
+   # labels = test_data.sentiment.unique().tolist()
+    #encoder = LabelEncoder()
+    #encoder.fit(test_data.sentiment.to_list())
+
+    #y_test = encoder.transform(test_data.sentiment.to_list())
+
+    #y_test = y_test.reshape(-1, 1)
+
+    #print("y_test shape:", y_test.shape)
 # !wget http://nlp.stanford.edu/data.glove.6B.zip
 
 # !unzip glove.6B.zip
@@ -142,7 +168,7 @@ GLOVE_EMB = 'C:/Users/manfr/OneDrive/Desktop/glove.6B.300d.txt'
 EMBEDDING_DIM = 300
 LR = 1e-3
 BATCH_SIZE = 1024
-EPOCHS = 1  # RIMETTERE 10
+EPOCHS = 200
 MODEL_PATH = '.../output/kaggle/working/best_model.hdf5'
 
 embeddings_index = {}
@@ -183,12 +209,12 @@ x = Bidirectional(LSTM(64, dropout=0.2, recurrent_dropout=0.2))(x)
 x = Dense(512, activation='relu')(x)
 x = Dropout(0.5)(x)
 x = Dense(512, activation='relu')(x)
-outputs = Dense(1, activation='sigmoid')(x)
+outputs = Dense(3, activation='sigmoid')(x)
 model = tf.keras.Model(sequence_input, outputs)
 
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ReduceLROnPlateau
-
+#rimettere binary crossentropy
 model.compile(optimizer=Adam(learning_rate=LR), loss='binary_crossentropy',
               metrics=['accuracy'])
 ReduceLROnPlateau = ReduceLROnPlateau(factor=0.1,
@@ -198,6 +224,7 @@ ReduceLROnPlateau = ReduceLROnPlateau(factor=0.1,
 
 log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=10)
 
 checkpoint_filepath = 'tmp/checkpoint/weights.ckpt'
 model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
@@ -211,8 +238,8 @@ print("Training on GPU...") if tf.test.is_gpu_available() else print("Training o
 
 if TRAINING == True:
     history = model.fit(x_train, y_train, batch_size=BATCH_SIZE, epochs=EPOCHS,
-                        validation_data=(x_test, y_test),
-                        callbacks=[ReduceLROnPlateau, tensorboard_callback, model_checkpoint_callback])
+                        validation_data=(x_test, y_test),                                             #stop_callback
+                        callbacks=[ReduceLROnPlateau, tensorboard_callback, model_checkpoint_callback, stop_callback])
 
     s, (at, al) = plt.subplots(2, 1)
     at.plot(history.history['acc'], c='b')  # ho cambiato accuracy con acc
@@ -241,12 +268,19 @@ y_pred_1d = [decode_sentiment(score) for score in scores]
 #print(y_pred_1d)
 
 i_x = 0
-for tweet in x_test:
-   # print(str(tweet)+'\t'+str(y_pred_1d[i_x]))
+for tweet in test_data.text:
+    print(str(tweet)+'\t'+str(y_pred_1d[i_x])) #commentare per pulizia risultati run
     i_x += 1
 
 import itertools
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+
+
+#from sklearn.metrics import classification_report
+#target_names = ['positive', 'negative']
+#y_true = y_test
+#y_pred = y_pred_1d
+#print(classification_report(y_true, y_pred, target_names=target_names))
 
 
 def plot_confusion_matrix(cm, classes,
@@ -282,4 +316,9 @@ def plot_confusion_matrix(cm, classes,
     plt.show()
 
     print(classification_report(list(test_data.sentiment), y_pred_1d))
+
+
+    #target_names = ['positive', 'negative']
+    #print(classification_report(y_test, y_pred_1d, target_names=target_names))
+
 
