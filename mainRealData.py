@@ -21,7 +21,7 @@ import re
 
 print("Tensorflow Version", tf.__version__)
 
-TRAINING = True
+TRAINING = False
 
 # TRAIN
 df = pd.read_csv('C:/Users/manfr/OneDrive/Desktop/training.1600000.processed.noemoticon.csv',
@@ -32,18 +32,18 @@ df.head()
 df = df.drop(['id', 'date', 'query', 'user_id'], axis=1)
 
 # TEST
-df_test = pd.read_csv('C:/Users/manfr/OneDrive/Desktop/files/tweets.csv',
+df_test = pd.read_csv('C:/Users/manfr/OneDrive/Desktop/files/tweetsSelection.csv',
                       encoding='latin') #header non c'è
 
 #PROVE
-#df_test.head()
-#df_test.columns = ['sentiment', 'id', 'date', 'query', 'user_id', 'text']
-#df_test.head()
-#df_test = df_test.drop(['id', 'date', 'query', 'user_id'], axis=1)
+df_test.head()
+df_test.columns = ['text','sentiment']
+df_test.head()
 
 
 
-lab_to_sentiment = {0: "Negative", 4: "Positive", 8: "Neutral"}
+
+lab_to_sentiment = {0: "Negative", 4: "Positive"}
 
 
 def label_decoder(label):
@@ -110,7 +110,7 @@ print("Test Data size", len(test_data))
 
 # lettura testing set da dataframe
 if TRAINING == False:
-    test_data = df_test
+    test_data_selected = df_test
 
 
 train_data.head(10)
@@ -131,9 +131,13 @@ x_train = pad_sequences(tokenizer.texts_to_sequences(train_data.text),
                         maxlen=MAX_SEQUENCE_LENGTH)
 x_test = pad_sequences(tokenizer.texts_to_sequences(test_data.text),
                        maxlen=MAX_SEQUENCE_LENGTH)
+#prova
+x_test_selected = pad_sequences(tokenizer.texts_to_sequences(test_data_selected.text),
+                       maxlen=MAX_SEQUENCE_LENGTH)
 
 print("Training X Shape:", x_train.shape)
 print("Testing X Shape:", x_test.shape)
+print("Testing selected X Shape:", x_test_selected.shape)
 
 labels = train_data.sentiment.unique().tolist()
 
@@ -149,17 +153,26 @@ if TRAINING == True:
     print("y_train shape:", y_train.shape)
     print("y_test shape:", y_test.shape)
 
-#if TRAINING == False:
-   # labels = test_data.sentiment.unique().tolist()
+if TRAINING == False:
+    #operazioni su testing set di sentimetn-140
+    encoder = LabelEncoder()
+    encoder.fit(train_data.sentiment.to_list())
+
+    y_test = encoder.transform(test_data.sentiment.to_list())
+
+    y_test = y_test.reshape(-1, 1)
+
+    print("y_test shape:", y_test.shape)
+
+    #operazioni su testing set selezionato
     #encoder = LabelEncoder()
-    #encoder.fit(test_data.sentiment.to_list())
+    #encoder.fit(train_data.sentiment.to_list())
 
-    #y_test = encoder.transform(test_data.sentiment.to_list())
+    y_test_selected = encoder.transform(test_data_selected.sentiment.to_list())
 
-    #y_test = y_test.reshape(-1, 1)
+    y_test_selected = y_test_selected.reshape(-1, 1)
 
-    #print("y_test shape:", y_test.shape)
-# !wget http://nlp.stanford.edu/data.glove.6B.zip
+    print("y_test_selectes shape:", y_test_selected.shape)
 
 # !unzip glove.6B.zip
 
@@ -209,7 +222,7 @@ x = Bidirectional(LSTM(64, dropout=0.2, recurrent_dropout=0.2))(x)
 x = Dense(512, activation='relu')(x)
 x = Dropout(0.5)(x)
 x = Dense(512, activation='relu')(x)
-outputs = Dense(3, activation='sigmoid')(x)
+outputs = Dense(1, activation='sigmoid')(x)
 model = tf.keras.Model(sequence_input, outputs)
 
 from tensorflow.keras.optimizers import Adam
@@ -265,23 +278,53 @@ if TRAINING == False:
 
 scores = model.predict(x_test, verbose=1, batch_size=10000)
 y_pred_1d = [decode_sentiment(score) for score in scores]
+
+#creo y_pred_selected per i twitter selezionati
+scores_selected = model.predict(x_test_selected, verbose=1, batch_size=10000)
+y_pred_selected = [decode_sentiment(score) for score in scores_selected]
+
 #print(y_pred_1d)
 
 i_x = 0
 for tweet in test_data.text:
-    print(str(tweet)+'\t'+str(y_pred_1d[i_x])) #commentare per pulizia risultati run
+    #print(str(tweet)+'\t'+str(y_pred_1d[i_x])) #commentare per pulizia risultati run
     i_x += 1
 
 import itertools
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 
 
-#from sklearn.metrics import classification_report
-#target_names = ['positive', 'negative']
-#y_true = y_test
-#y_pred = y_pred_1d
-#print(classification_report(y_true, y_pred, target_names=target_names))
+#stampo metriche su testing set di sentiment-140
+target_names = ['positive', 'negative']
+y_true = y_test
+y_pred_numeric = []
+for y in y_pred_1d:
+    if y=="Negative":
+        y_pred_numeric.append(0)
+    else:
+        y_pred_numeric.append(1)
 
+
+
+#print("Stampa di y_true")
+#print(y_true)
+#print("Stampa di y_pred")
+#print(y_pred_numeric)
+print(classification_report(y_true, y_pred_numeric, target_names=target_names))
+
+target_names = ['positive', 'negative']
+y_true_selected = y_test_selected
+y_pred_selected_numeric = []
+for y in y_pred_selected:
+    if y=="Negative":
+        y_pred_selected_numeric.append(0)
+    else:
+        y_pred_selected_numeric.append(1)
+
+#stampo metriche su testing set selezionato
+print(y_true_selected)
+print(y_pred_selected_numeric)
+print(classification_report(y_true_selected, y_pred_selected_numeric, target_names=target_names))
 
 def plot_confusion_matrix(cm, classes,
                           title='Confusion matrix',
@@ -315,10 +358,12 @@ def plot_confusion_matrix(cm, classes,
     plot_confusion_matrix(cnf_matrix, classes=test_data.sentiment.unique(), title="Confusion matrix")
     plt.show()
 
-    print(classification_report(list(test_data.sentiment), y_pred_1d))
+    #print(classification_report(list(test_data.sentiment), y_pred_1d))
 
 
     #target_names = ['positive', 'negative']
     #print(classification_report(y_test, y_pred_1d, target_names=target_names))
+
+
 
 
